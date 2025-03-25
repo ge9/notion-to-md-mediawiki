@@ -4,7 +4,7 @@ import markdownTable from "markdown-table";
 import fetch from "node-fetch";
 
 export const inlineCode = (text: string) => {
-  return `\`${text}\``;
+  return `<code>${text}</code>`;
 };
 
 export const inlineEquation = (text: string) => {
@@ -12,15 +12,15 @@ export const inlineEquation = (text: string) => {
 };
 
 export const bold = (text: string) => {
-  return `**${text}**`;
+  return `<strong>${text}</strong>`;
 };
 
 export const italic = (text: string) => {
-  return `_${text}_`;
+  return `<em>${text}</em>`;
 };
 
 export const strikethrough = (text: string) => {
-  return `~~${text}~~`;
+  return `<s>${text}</s>`;
 };
 
 export const underline = (text: string) => {
@@ -28,7 +28,7 @@ export const underline = (text: string) => {
 };
 
 export const link = (text: string, href: string) => {
-  return `[${text}](${href})`;
+  return `[${text}](${href}) nmd_mw_mark_link`;
 };
 
 export const codeBlock = (text: string, language?: string) => {

@@ -486,6 +486,90 @@ export class NotionToMarkdown {
           const annotations = content.annotations;
           let plain_text = content.plain_text;
 
+          //@ts-ignore
+          if (content.type == "mention" && content.mention.type == 'link_mention' && content.mention.link_mention.title) plain_text = content.mention.link_mention.title;
+          //@ts-ignore
+          if (content.type == "mention" && content.mention.type == 'page') plain_text = "nmd_mw_mention_begin"+content.mention.page.id+"nmd_mw_mention_end";
+
+          /*
+          if (content.type === "text"){
+            plain_text =  plain_text.replace(/[<>{}]/g, (c) => "nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+            if (type != "code" && !annotations.code) 
+            plain_text = plain_text.replace(/\n/g, "  \n").replace(/\\/g, "\\\\").replace(/[$*+\-~'\[\]]/g, (c) => "nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+          }*/
+
+          /* 以下は、pandocに食わせる前の時点で```をpreにしたらインデントされているブロックで上手くいかなかったためやめた仕様。
+          if (content.type === "text"){
+            if (type == "code"){
+            }else{//テキストエリア
+              //まず、notion-to-mdがブロック内改行に対応していないので対応。
+              plain_text = plain_text.replace(/\n/g, "  \n")
+              //以下は、MediaWikiの特殊文字であるにもかかわらずpandocがそのままべた書きしてしまう文字。最強エスケープが必要。
+              //これらは（MarkdownおよびMediaWikiの）preの内側では無害である。外側では特殊文字であるものとそうでないものがある。
+              plain_text = plain_text.replace(/[=;:#*\-'{}~\[\]]/g, (c) => "nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+              //これらは、Markdownのテキストエリアでは特殊文字だが、preの内側で無害で、かつMediaWikiの特殊文字ではない。
+              plain_text = plain_text.replace(/[`$+\\]/g, (c) => "\\"+c)
+            }
+            //notion-to-mdがテキストエリア内にもかかわらず放置している（自分がコード系の囲いもHTMLに変えたため、その中でも放置されることとなる）特殊文字のうち、
+            //MediaWikiで特殊文字ではないあるいはpandocがちゃんと扱えるもの。
+            //この変換は先ほどの最強エスケープより後でなければいけない。（#が最強エスケープされるのを防ぐため）（もちろん同時でもいい）
+            //バックスラッシュを付加するエスケープだと、<pre>内ではバックスラッシュまで表示されてしまうので、&を使う。（本当はpre内外で操作分けてもいいが）
+            plain_text = plain_text.replace(/[&<>]/g, (c) => "&#" + c.charCodeAt(0)+";")
+          }
+          */
+
+          //`のみcodeに変え、```は```のままという仕様の場合
+          if (content.type === "text"){
+            if (type != "code"){//実際はcodeの処理のときはplain_text変数は結局使われないのでこの条件式はなくても多分動く
+              //以下は、MediaWikiの特殊文字であるにもかかわらずpandocがそのままべた書きしてしまう文字。最強エスケープが必要。
+              //これらはMarkdownの```およびMediaWikiのpreの内側では無害である。（外側では特殊文字であるものとそうでないものがある。）
+              plain_text = plain_text.replace(/[=;:#*'{}~\-\[\]]/g, (c) => "nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+              
+              //これらは、Markdownのテキストエリアでは特殊文字だが、MediaWikiの特殊文字ではないあるいはpandocがちゃんと扱えるもの。
+              //（ただし、"."（ピリオド）のみ、「リンクテキストもURLになっているリンク及びcode内に書かれた（リンクでない）URLがpandocの変換でおかしくなるのを防ぐ」という目的で入れている。）
+              //この変換は先ほどの最強エスケープより後でなければいけない。（#が最強エスケープされるのを防ぐため）（もちろん同時でもいい）
+              //スラッシュでのエスケープだと`<`でバグったことがあった（おそらくpandocのせい）ので、&#xx;を使用
+              plain_text = plain_text.replace(/[`$+&<>\\.]/g, (c) => "&#" + c.charCodeAt(0)+";")
+
+              //2つ以上の連続する空白文字は（そのように表示したい特別な理由があると考えて）&nbsp;に変換。これは&のエスケープより後である必要がある。
+              plain_text = plain_text.replace(/ {2,}/g, (c) => c.split('').map(function() { return '&nbsp;'; }).join(''))
+
+              //notion-to-mdがブロック内改行に対応していないので対応。nbspへの変換より後に行う。
+              plain_text = plain_text.replace(/\n/g, "  \n")
+            }
+            //また、"も、mediawikiでの特殊文字ではないが、pandocでは&quot;に変換される。
+            //ベタ書きでも表示には影響ないが、span id=""の中身に生のダブルクォーテーションが入ってしまう副作用があるし、その他問題が起きる可能性がある。
+            //下記のように最強エスケープすればそのまま書けるが、&quot;を"にしてデータ量を削減するより安全を取ったほうが良さそうである。
+            //ちなみに1文字減らすために最強エスケープから&#34;に戻す方法もあるが、&quot;のほうが自動でspan id=""の中身から除去されるようなのでそのほうが良さそう。
+            //plain_text = plain_text.replace(/["]/g, (c) => "nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+          }
+
+          /* 旧仕様
+          //これらは（別行立てのpreなら大丈夫だが）通常テキストのみならず<code>でも貫通してくる最強の特殊文字なので、最強エスケープするしかない。
+          //ちなみに、|も特殊文字だが、[]や{}と伴ってしか使われないのでエスケープは不要である。
+          plain_text =  plain_text.replace(/['{}~\[\]]/g, (c) => "nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+          if (content.type === "text"){
+            if (type == "code" || annotations.code) {//コードブロック（それぞれmediawikiのpreとcodeになる）内部
+              //コード内部では<>は無効なので本来は不要だが、detailsまわりが修正されるまで、<>を最強エスケープの対象としておく。
+              plain_text =  plain_text.replace(/[<>]/g, (c) =>"nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+              //バッククォートはmarkdownのコード内でも外でも等しく有害になる珍しい文字であるが、対処法が異なる。
+              //markdownでコード内に`を書くには、両側をそれより多い`で囲わねばならず（\`や&#96;ではそれがそのまま表示されてしまう）、その実装が面倒である。
+              //そこで、最強の保護をかけて、MediaWikiに変換してから元に戻す。ちなみにMediaWikiでは`は特殊文字ではないのでエスケープ文字ではなくベタ書きに戻す。
+              plain_text =  plain_text.replace(/`/g, (c) => "nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+              //TODO 改行ありのannotations.codeテキストは未対応。やるとしたら強制的に改行で分割？それ以外に思いつかない
+            }else{//テキストエリア
+              //まず、notion-to-mdがブロック内改行に対応していないので対応。
+              plain_text = plain_text.replace(/\n/g, "  \n")
+              //Markdownの``や``````およびMediaWikiのcodeやpreの内部では無害、かつ、MediaWikiの特殊文字であるにもかかわらずpandocがそのままべた書きしてしまう文字。
+              //Markdownにおいては特殊文字であるものとそうでないものがある。最強エスケープが必要。
+              plain_text = plain_text.replace(/[=;:#*\-']/g, (c) => "nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+              //notion-to-mdがテキストエリア内にもかかわらず放置している特殊文字のうち、MediaWikiで特殊文字ではないあるいはpandocがちゃんと扱えるもの。
+              //コード内と違って`はここは単純なエスケープで十分。この変換は先ほどの最強エスケープより後でなければいけない。（#が最強エスケープされるのを防ぐため）（もちろん同時でもいい） 
+              plain_text = plain_text.replace(/[&`<>$+\\]/g, (c) => "&#" + c.charCodeAt(0)+";")
+            }
+          }
+          */
+
           plain_text = this.annotatePlainText(plain_text, annotations);
 
           if (content["href"])
@@ -499,9 +583,23 @@ export class NotionToMarkdown {
     switch (type) {
       case "code":
         {
-            const codeContent = block.code.rich_text.map((t: any) => t.plain_text).join("\n");
-            const language = block.code.language || "plaintext";
-            parsedData = md.codeBlock(codeContent, language);
+          //```の内部では<>は無効なので本来は不要だが、detailsまわりが修正されるまで、<>を最強エスケープの対象としておく。
+          //無事修正されたので、対象外に
+          //plain_text =  plain_text.replace(/[<>]/g, (c) =>"nmd_mw_esc_" + c.charCodeAt(0)+"_m")
+          //バッククォートはmarkdownの```の中でも有害になる珍しい文字であるが、外側と対処法が異なる。
+          //markdownでコード内に`を書くには、両側をそれより多い`で囲うしかなく（\`や&#96;ではそれがそのまま表示されてしまう）、その実装が面倒である。
+          //そこで、最強エスケープをかけて、MediaWikiに変換してから元に戻す。ちなみにMediaWikiでは`は特殊文字ではないのでエスケープ文字ではなくベタ書きに戻す。
+          //書式は、どうせsyntaxhighlightの中では効かないので無視。
+          const codeContent = block.code.rich_text.map((t: any) => t.plain_text.replace(/`/g, (c: string) => "nmd_mw_esc_" + c.charCodeAt(0)+"_m")).join("");
+          const language = block.code.language || "plaintext";
+          var cap0 = "";
+          var cap1 = "";
+          if (block[type].caption[0]){
+            cap1 = "\n<div style='text-align: center;'>"+block[type].caption[0].plain_text+"</div>";
+            //captionがあるときは直前のpreのbottomの余白を狭めたいのでマーカーを入れる
+            cap0 = "nmd_mw_mark_cap\n"
+          }
+          parsedData = cap0+md.codeBlock(codeContent, language)+cap1;
         }
         break;
 
@@ -604,6 +702,7 @@ export class NotionToMarkdown {
       if (annotations.italic) text = md.italic(text);
       if (annotations.strikethrough) text = md.strikethrough(text);
       if (annotations.underline) text = md.underline(text);
+      if (annotations.strikethrough && annotations.underline) {text = ""}//hide contents
     }
 
     return leading_space + text + trailing_space;
